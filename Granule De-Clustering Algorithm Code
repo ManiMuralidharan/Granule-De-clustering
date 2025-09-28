@@ -1,0 +1,284 @@
+function results = improvedGranuleDeclustering(spotData, singleGranuleAreaThreshold)
+% IMPROVEDGRANULEDECLUSTERING Advanced granule de-clustering with multi-parameter analysis
+%
+% Inputs:
+%   spotData - either table from Imaris export or path to Excel file
+%   singleGranuleAreaThreshold - area threshold for single granules
+%
+% Output:
+%   results - structure containing de-clustering results and statistics
+
+    % Read data if file path is provided
+    if ischar(spotData) || isstring(spotData)
+        if exist(spotData, 'file')
+            spotData = readtable(spotData);
+        else
+            error('File not found: %s', spotData);
+        end
+    end
+    
+    % Validate input table
+    if ~istable(spotData)
+        error('spotData must be a table or file path');
+    end
+    
+    if ~ismember('Area', spotData.Properties.VariableNames)
+        error('Table must contain ''Area'' column');
+    end
+    
+    fprintf('Processing %d objects...\n', height(spotData));
+    
+    % Calculate robust statistics (less sensitive to outliers)
+    areas = spotData.Area;
+    singleGranuleAreas = areas(areas < singleGranuleAreaThreshold);
+    
+    if isempty(singleGranuleAreas)
+        warning('No single granules found below threshold. Using all data for statistics.');
+        singleGranuleAreas = areas;
+    end
+    
+    meanGranuleArea = mean(singleGranuleAreas);
+    stdGranuleArea = std(singleGranuleAreas);
+    medianGranuleArea = median(singleGranuleAreas);
+    
+    fprintf('Single granule statistics:\n');
+    fprintf('  Mean area: %.2f ± %.2f (std)\n', meanGranuleArea, stdGranuleArea);
+    fprintf('  Median area: %.2f\n', medianGranuleArea);
+    fprintf('  Number of single granules: %d\n', numel(singleGranuleAreas));
+    
+    % Initialize variables
+    spotData.AdjustedCount = ones(height(spotData), 1);
+    spotData.IsCluster = false(height(spotData), 1);
+    spotData.ClusterConfidence = zeros(height(spotData), 1); % 0=low, 1=medium, 2=high
+    
+    % Multi-criteria clustering detection
+    clusterIndices = [];
+    
+    for i = 1:height(spotData)
+        currentArea = spotData.Area(i);
+        areaRatio = currentArea / meanGranuleArea;
+        zScore = (currentArea - meanGranuleArea) / stdGranuleArea;
+        
+        % Calculate confidence score
+        confidence = 0;
+        
+        % Criteria 1: Area threshold
+        areaPass = currentArea > singleGranuleAreaThreshold;
+        
+        % Criteria 2: Area ratio
+        ratioPass = areaRatio > 1.5;
+        
+        % Criteria 3: Statistical significance (Z-score)
+        zScorePass = zScore > 2;
+        
+        % Multi-threshold approach with confidence scoring
+        if areaPass && ratioPass && zScorePass
+            % High confidence cluster
+            confidence = 2;
+        elseif areaPass && ratioPass
+            % Medium confidence cluster
+            confidence = 1;
+        end
+        
+        if confidence > 0
+            % Conservative estimation with bounds checking
+            estimatedCount = max(1, round(areaRatio));
+            
+            % Upper limit to prevent overestimation (adjust based on biological knowledge)
+            maxReasonableCount = min(10, max(3, round(areaRatio * 0.8)));
+            estimatedCount = min(estimatedCount, maxReasonableCount);
+            
+            spotData.AdjustedCount(i) = estimatedCount;
+            spotData.IsCluster(i) = true;
+            spotData.ClusterConfidence(i) = confidence;
+            clusterIndices = [clusterIndices; i];
+            
+            if confidence == 2
+                fprintf('High confidence cluster - Object %d: Area=%.2f, Estimated granules=%d\n', ...
+                        i, currentArea, estimatedCount);
+            else
+                fprintf('Medium confidence cluster - Object %d: Area=%.2f, Estimated granules=%d\n', ...
+                        i, currentArea, estimatedCount);
+            end
+        end
+    end
+    
+    % Alternative: Shape-based analysis (if shape parameters available)
+    if ismember('Circularity', spotData.Properties.VariableNames)
+        fprintf('Performing shape-based analysis...\n');
+        
+        % Clusters often have lower circularity
+        circularityThreshold = 0.7;
+        lowCircularity = spotData.Circularity < circularityThreshold;
+        potentialClusters = spotData.Area > meanGranuleArea * 1.2 & lowCircularity & ~spotData.IsCluster;
+        
+        shapeClusterCount = 0;
+        for i = find(potentialClusters)'
+            estimatedCount = max(2, round(spotData.Area(i) / meanGranuleArea));
+            estimatedCount = min(estimatedCount, 8); % More conservative for shape-based
+            
+            spotData.AdjustedCount(i) = estimatedCount;
+            spotData.IsCluster(i) = true;
+            spotData.ClusterConfidence(i) = 1; % Medium confidence for shape-based
+            shapeClusterCount = shapeClusterCount + 1;
+            
+            fprintf('Shape-based cluster - Object %d: Area=%.2f, Circularity=%.2f, Estimated granules=%d\n', ...
+                    i, spotData.Area(i), spotData.Circularity(i), estimatedCount);
+        end
+        fprintf('Shape-based clusters identified: %d\n', shapeClusterCount);
+    end
+    
+    % Intensity-based analysis (if intensity data available)
+    intensityColumns = {'Intensity', 'MeanIntensity', 'TotalIntensity'};
+    availableIntensityCols = intensityColumns(ismember(intensityColumns, spotData.Properties.VariableNames));
+    
+    if ~isempty(availableIntensityCols)
+        fprintf('Intensity data available: %s\n', strjoin(availableIntensityCols, ', '));
+        % Add intensity-based clustering logic here if needed
+    end
+    
+    % Calculate summary statistics
+    totalGranules = sum(spotData.AdjustedCount);
+    clusterCount = sum(spotData.IsCluster);
+    highConfidenceClusters = sum(spotData.ClusterConfidence == 2);
+    mediumConfidenceClusters = sum(spotData.ClusterConfidence == 1);
+    
+    fprintf('\n=== DE-CLUSTERING SUMMARY ===\n');
+    fprintf('Total objects analyzed: %d\n', height(spotData));
+    fprintf('Detected clusters: %d\n', clusterCount);
+    fprintf('  - High confidence: %d\n', highConfidenceClusters);
+    fprintf('  - Medium confidence: %d\n', mediumConfidenceClusters);
+    fprintf('Single granules: %d\n', height(spotData) - clusterCount);
+    fprintf('Total estimated granules: %d\n', totalGranules);
+    fprintf('Average granules per cluster: %.2f\n', ...
+            mean(spotData.AdjustedCount(spotData.IsCluster)));
+    
+    if clusterCount > 0
+        fprintf('Cluster size distribution:\n');
+        clusterCounts = spotData.AdjustedCount(spotData.IsCluster);
+        uniqueCounts = unique(clusterCounts);
+        for i = 1:length(uniqueCounts)
+            count = sum(clusterCounts == uniqueCounts(i));
+            fprintf('  %d-granule clusters: %d\n', uniqueCounts(i), count);
+        end
+    end
+    
+    % Visualization
+    if height(spotData) > 0
+        createVisualizations(spotData, meanGranuleArea, singleGranuleAreaThreshold, medianGranuleArea);
+    end
+    
+    % Return detailed results
+    results.spotData = spotData;
+    results.totalGranules = totalGranules;
+    results.clusterStats = struct(...
+        'meanArea', meanGranuleArea, ...
+        'stdArea', stdGranuleArea, ...
+        'medianArea', medianGranuleArea, ...
+        'clusterCount', clusterCount, ...
+        'highConfidenceClusters', highConfidenceClusters, ...
+        'mediumConfidenceClusters', mediumConfidenceClusters, ...
+        'singleGranuleCount', height(spotData) - clusterCount);
+    
+    % Save results to Excel file
+    outputFilename = sprintf('GranuleAnalysis_Results_%s.xlsx', datestr(now, 'yyyy-mm-dd_HH-MM'));
+    try
+        writetable(spotData, outputFilename);
+        fprintf('Results saved to: %s\n', outputFilename);
+    catch ME
+        warning('Could not save results to Excel: %s', ME.message);
+    end
+end
+
+function createVisualizations(spotData, meanArea, thresholdArea, medianArea)
+% CREATEVISUALIZATIONS Generate diagnostic plots for granule analysis
+    
+    figure('Position', [100, 100, 1200, 800]);
+    
+    % Plot 1: Area distribution
+    subplot(2, 3, 1);
+    histogram(spotData.Area, 50, 'FaceColor', [0.7 0.7 0.7], 'EdgeColor', 'black');
+    hold on;
+    xline(meanArea, 'r--', 'LineWidth', 2, 'Label', 'Mean Area');
+    xline(thresholdArea, 'g--', 'LineWidth', 2, 'Label', 'Threshold');
+    xline(medianArea, 'b--', 'LineWidth', 2, 'Label', 'Median Area');
+    title('Area Distribution');
+    xlabel('Area'); ylabel('Frequency');
+    legend('Areas', 'Mean', 'Threshold', 'Median');
+    grid on;
+    
+    % Plot 2: Granule count distribution
+    subplot(2, 3, 2);
+    histogram(spotData.AdjustedCount, 'BinMethod', 'integers', ...
+              'FaceColor', [0.2 0.6 0.8], 'EdgeColor', 'black');
+    title('Estimated Granules per Object');
+    xlabel('Granule Count'); ylabel('Frequency');
+    grid on;
+    
+    % Plot 3: Cluster vs Single granules
+    subplot(2, 3, 3);
+    singleAreas = spotData.Area(~spotData.IsCluster);
+    clusterAreas = spotData.Area(spotData.IsCluster);
+    
+    if ~isempty(singleAreas) && ~isempty(clusterAreas)
+        boxplot([singleAreas; clusterAreas], ...
+                [zeros(length(singleAreas), 1); ones(length(clusterAreas), 1)], ...
+                'Labels', {'Single', 'Cluster'});
+        title('Area Comparison: Single vs Cluster');
+        ylabel('Area');
+    else
+        text(0.5, 0.5, 'Insufficient data for comparison', ...
+             'HorizontalAlignment', 'center', 'Units', 'normalized');
+        title('Area Comparison: Single vs Cluster');
+    end
+    
+    % Plot 4: Confidence levels
+    subplot(2, 3, 4);
+    confidenceLevels = categorical(spotData.ClusterConfidence, [0 1 2], ...
+                                  {'Single', 'Medium', 'High'});
+    histogram(confidenceLevels, 'FaceColor', [0.8 0.4 0.2]);
+    title('Cluster Confidence Levels');
+    ylabel('Count');
+    
+    % Plot 5: Circularity analysis (if available)
+    if ismember('Circularity', spotData.Properties.VariableNames)
+        subplot(2, 3, 5);
+        scatter(spotData.Area, spotData.Circularity, 30, spotData.ClusterConfidence, 'filled');
+        colorbar;
+        xlabel('Area'); ylabel('Circularity');
+        title('Area vs Circularity (colored by confidence)');
+        grid on;
+    end
+    
+    % Plot 6: Cumulative distribution
+    subplot(2, 3, 6);
+    [f, x] = ecdf(spotData.Area);
+    plot(x, f, 'b-', 'LineWidth', 2);
+    hold on;
+    xline(thresholdArea, 'r--', 'Threshold', 'LineWidth', 2);
+    title('Cumulative Area Distribution');
+    xlabel('Area'); ylabel('Cumulative Probability');
+    grid on;
+    
+    sgtitle('Granule De-clustering Analysis Results', 'FontSize', 14, 'FontWeight', 'bold');
+end
+
+% Example usage function
+function runExample()
+% RUNEXAMPLE Example of how to use the improvedGranuleDeclustering function
+    
+    fprintf('=== Example Usage ===\n');
+    
+    % Example 1: With file path
+    % results = improvedGranuleDeclustering('Imaris_Export.xlsx', 500);
+    
+    % Example 2: With existing table
+    % load your spotData table first, then:
+    % results = improvedGranuleDeclustering(spotData, 500);
+    
+    fprintf('To use this function:\n');
+    fprintf('1. results = improvedGranuleDeclustering(''your_file.xlsx'', threshold);\n');
+    fprintf('2. OR: results = improvedGranuleDeclustering(spotDataTable, threshold);\n');
+    fprintf('3. Check results.spotData for detailed output\n');
+    fprintf('4. Check generated Excel file for saved results\n');
+end
