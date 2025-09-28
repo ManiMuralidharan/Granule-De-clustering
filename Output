@@ -1,0 +1,40 @@
+Understanding the Output:
+The function adds several columns to your data:
+
+AdjustedCount: Estimated number of granules in each object
+IsCluster: True/false indicating if the object is a cluster
+ClusterConfidence: 0=single granule, 1=medium confidence cluster, 2=high confidence cluster
+
+Typical Workflow:
+
+Determine threshold: Start with a conservative estimate (e.g., 500 if measuring in μm²)
+Run analysis: Execute the function with your data
+Review visualizations: Check the generated plots for validation
+Adjust threshold: If needed, modify the threshold and re-run
+Export results: The function automatically saves results to Excel
+
+Example Output:
+Processing 150 objects...
+Single granule statistics:
+  Mean area: 245.67 ± 89.23 (std)
+  Median area: 230.45
+  Number of single granules: 95
+
+High confidence cluster - Object 15: Area=1200.50, Estimated granules=5
+Medium confidence cluster - Object 23: Area=780.30, Estimated granules=3
+
+=== DE-CLUSTERING SUMMARY ===
+Total objects analyzed: 150
+Detected clusters: 12
+  - High confidence: 8
+  - Medium confidence: 4
+Single granules: 138
+Total estimated granules: 175
+Tips for Best Results:
+
+Choose appropriate threshold: Should be slightly above the largest single granule area
+Validate visually: Use the generated plots to verify clustering decisions
+Consider biology: Adjust maximum granule counts based on biological expectations
+Iterative approach: Try different thresholds and compare results
+
+The code is designed to be conservative to avoid overestimating granule numbers, which is generally preferable in quantitative microscopy analysis.
