@@ -1,2 +1,42 @@
 # Granule-De-clustering
 Granule De-clustering
+This MATLAB code implements an advanced granule de-clustering algorithm for analyzing microscopy data, likely from Imaris software exports. Let me break down what it does and how to use it.
+What This Code Does
+The improvedGranuleDeclustering function analyzes microscopy spot data to identify and separate clustered granules from single granules. It's designed to solve a common problem in cell biology where multiple granules appear as single objects due to imaging limitations.
+Key Features:
+
+Multi-parameter Analysis: Uses area, shape (circularity), and statistical measures to identify clusters
+Confidence Scoring: Classifies clusters as high, medium, or low confidence
+Conservative Estimation: Estimates the number of granules in each cluster while avoiding overestimation
+Comprehensive Visualization: Creates diagnostic plots to validate results
+Data Export: Saves results to Excel files
+
+Algorithm Logic:
+The code identifies clusters using three criteria:
+
+Area threshold: Objects larger than the single granule threshold
+Area ratio: Objects >1.5x the mean single granule area
+Statistical significance: Objects >2 standard deviations above the mean
+
+How to Run the Code
+Prerequisites:
+
+MATLAB (with Statistics and Machine Learning Toolbox recommended)
+Data file (Excel format) with at least an 'Area' column
+Optional: 'Circularity' and intensity columns for enhanced analysis
+
+Step-by-Step Instructions:
+
+Prepare Your Data:
+
+Export spot data from Imaris (or similar software) to Excel
+Ensure the file contains at least an 'Area' column
+Optional columns: 'Circularity', 'Intensity', 'MeanIntensity', 'TotalIntensity'
+
+
+Save the Code:
+
+Save the code as improvedGranuleDeclustering.m in your MATLAB working directory
+
+
+Run the Function:
