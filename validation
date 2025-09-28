@@ -1,0 +1,10 @@
+% From Excel file
+results = improvedGranuleDeclustering('Imaris_Export.xlsx', 500);
+
+% From existing table
+results = improvedGranuleDeclustering(spotData, 750);
+
+% Access results
+totalGranules = results.totalGranules;
+detailedData = results.spotData;
+clusterStats = results.clusterStats;
